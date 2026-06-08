@@ -9,7 +9,11 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#if __has_include(<onnxruntime/core/session/onnxruntime_cxx_api.h>)
 #include <onnxruntime/core/session/onnxruntime_cxx_api.h>
+#else
+#include <onnxruntime_cxx_api.h>
+#endif
 
 namespace demucsonnx
 {

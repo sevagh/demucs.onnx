@@ -105,7 +105,7 @@ static Eigen::MatrixXf load_audio_file(std::string filename)
 }
 
 // write a function to write a StereoWaveform to a wav file
-static void write_audio_file(const Eigen::MatrixXf &waveform,
+static bool write_audio_file(const Eigen::MatrixXf &waveform,
                              std::string filename)
 {
     // create a struct to hold the audio data
@@ -131,6 +131,7 @@ static void write_audio_file(const Eigen::MatrixXf &waveform,
         encode_wav_to_disk({fileData->channelCount, PCM_FLT, DITHER_TRIANGLE},
                            fileData.get(), filename);
     std::cout << "Encoder Status: " << encoderStatus << std::endl;
+    return encoderStatus == 0;
 }
 
 int main(int argc, const char **argv)
@@ -149,8 +150,7 @@ int main(int argc, const char **argv)
     std::string wav_file = argv[2];
 
     // strip extension to make prefix for output filenames
-    std::filesystem::path output_file_prefix = wav_file;
-    output_file_prefix.replace_extension();
+    std::filesystem::path output_file_prefix = std::filesystem::path(wav_file).stem();
 
     // output dir passed as argument
     std::string out_dir = argv[3];
@@ -222,6 +222,7 @@ int main(int argc, const char **argv)
 
     int nb_out_sources = model.nb_sources;
 
+    bool writeOk = true;
     for (int target = 0; target < nb_out_sources; ++target)
     {
         // now write the 4 audio waveforms to files in the output dir
@@ -267,7 +268,7 @@ int main(int argc, const char **argv)
 
         // insert target_name into the path after the digit
         // e.g. target_name_0_drums.wav
-        p_target.replace_filename(output_file_prefix.string() + "_" + std::to_string(target) + "_" +
+        p_target.replace_filename(output_file_prefix.filename().string() + "_" + std::to_string(target) + "_" +
                                   target_name + ".wav");
 
         std::cout << "Writing wav file " << p_target << std::endl;
@@ -284,8 +285,8 @@ int main(int argc, const char **argv)
             }
         }
 
-        write_audio_file(target_waveform, p_target);
+        writeOk = write_audio_file(target_waveform, p_target) && writeOk;
     }
 
-    return 0;
+    return writeOk ? 0 : 1;
 }
