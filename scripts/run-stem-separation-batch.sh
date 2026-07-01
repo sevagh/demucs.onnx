@@ -24,12 +24,20 @@ CONVERT_EXTS=(aif aiff)
 separate() {
     # $1 = input file to feed the separator, $2 = base name for skip/output
     local input="$1" base="$2"
-    if [[ -f "$OUT_DIR/${base}_0_drums.wav" ]]; then
+    if [[ -f "$OUT_DIR/${base}_0_drums.mp3" ]]; then
         echo "skip (already done): $base"
         return 0
     fi
     echo "=== processing: $base ==="
     "$BIN" "$MODEL" "$input" "$OUT_DIR"
+    # The CLI writes .wav stems; encode them to 320 kbps mp3 and drop the wavs
+    # to keep the shipped stem set small.
+    for stem in "$OUT_DIR/${base}"_*.wav; do
+        [[ -f "$stem" ]] || continue
+        if ffmpeg -v error -y -i "$stem" -b:a 320k "${stem%.wav}.mp3" </dev/null; then
+            rm -f "$stem"
+        fi
+    done
 }
 
 shopt -s nullglob nocaseglob
@@ -48,15 +56,18 @@ for ext in "${CONVERT_EXTS[@]}"; do
     for f in "$AUDIO_DIR"/*."$ext"; do
         base="$(basename "$f")"
         base="${base%.*}"
-        if [[ -f "$OUT_DIR/${base}_0_drums.wav" ]]; then
+        if [[ -f "$OUT_DIR/${base}_0_drums.mp3" ]]; then
             echo "skip (already done): $base"
             continue
         fi
-        tmp_wav="$(mktemp -t demucs-XXXXXX).wav"
+        # Convert into a temp dir under the real track name so the CLI (which
+        # names stems after the input file) produces "<base>_N_name.wav".
+        tmp_dir="$(mktemp -d)"
+        tmp_wav="$tmp_dir/$base.wav"
         echo "=== converting AIFF -> wav: $base ==="
         afconvert -f WAVE -d LEI16 "$f" "$tmp_wav"
         separate "$tmp_wav" "$base"
-        rm -f "$tmp_wav"
+        rm -rf "$tmp_dir"
     done
 done
 
