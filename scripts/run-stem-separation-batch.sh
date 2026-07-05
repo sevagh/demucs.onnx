@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run DemucsONNX stem separation over every supported audio file in /audio that
 # hasn't been processed yet (skips ones that already have output stems in
-# demucs-onnx-out).
+# Stems).
 #
 # Natively decoded by libnyquist: wav, flac, mp3, ogg, opus.
 # AIFF (.aif/.aiff) has no libnyquist decoder, so it is transcoded to a
@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 
 MODEL="./onnx-models/htdemucs.onnx"
 AUDIO_DIR="../audio"
-OUT_DIR="$AUDIO_DIR/demucs-onnx-out"
+OUT_DIR="$AUDIO_DIR/Stems"
 BIN="./build/build-cli/demucs"
 
 # Extensions libnyquist can decode directly.
