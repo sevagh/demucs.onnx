@@ -1,11 +1,13 @@
-#demucs==4.0.1
-# pass local path to demucs in vendored folder
+# Minimal dependencies needed to export Demucs to ONNX/ORT and run the C++ CLI.
+# Keep this list lean to avoid platform-specific wheel issues (e.g. llvmlite/numba).
 torch
 numpy
 -e ./demucs-for-onnx
-librosa
-museval
-musdb
 onnxruntime
 onnx
 bin2c
+
+# Optional analysis/evaluation dependencies (not required for conversion/build):
+# librosa
+# museval
+# musdb

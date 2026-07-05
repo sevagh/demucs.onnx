@@ -7,3 +7,8 @@ build*/
 *.pyc
 *.csv
 onnx-models/
+.DS_Store
+demucs-onnx/*
+.venv/
+third_party/onnxruntime-release/
+batch-run.log
