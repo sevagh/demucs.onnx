@@ -7,3 +7,6 @@ build*/
 *.pyc
 *.csv
 onnx-models/
+# local toolchain / env staging (see WINDOWS.md)
+deps/
+.venv/

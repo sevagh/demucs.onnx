@@ -1,5 +1,11 @@
 # demucs.onnx
 
+> **This is the `demucs.wrapped` fork** of [sevagh/demucs.onnx](https://github.com/sevagh/demucs.onnx):
+> a Windows/MSVC build with selectable execution providers (CPU / CUDA / DirectML),
+> plus sample-rate conversion tooling. Everything fork-specific — how to build, the
+> GPU setup, measured numbers, and what to watch out for — lives in **[WINDOWS.md](WINDOWS.md)**.
+> The rest of this README is upstream's.
+
 ONNX inference for the [Demucs v4 hybrid transformer](https://github.com/facebookresearch/demucs) model, a high-performance and high quality PyTorch neural network for music source separation.
 
 Unlike my other project [demucs.cpp](https://github.com/sevagh/demucs.cpp), where I wrote all of the neural network layers by hand, in this repo I use [ONNXRuntime](https://github.com/microsoft/onnxruntime), which is a universal high-performance neural network inference library with native support for diverse hardware platforms (CPU, GPU, desktop OS, web, smartphone OS, etc.).
