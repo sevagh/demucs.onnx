@@ -31,7 +31,7 @@ git submodule update --init --recursive --force
 ## 2. Python 环境（导出 ONNX 用）
 
 ```powershell
-cd C:\Users\f12fd\OneDrive\Desktop\demucs.onnx
+cd C:\Users\f12fd\OneDrive\Desktop\demucs.wrapped
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 
@@ -289,7 +289,7 @@ C++ CLI 写出的是 libnyquist 的 32-bit IEEE-float WAV（`wFormatTag=3`），
 ## 7. 完整流水线（本机那一首）
 
 ```powershell
-$R = "C:\Users\f12fd\OneDrive\Desktop\demucs.onnx"
+$R = "C:\Users\f12fd\OneDrive\Desktop\demucs.wrapped"
 $PY = "$R\.venv\Scripts\python.exe"
 $SRC = "E:\Music\许嵩 何曼婷 - 素颜.wav"      # 192 kHz / 24-bit
 
