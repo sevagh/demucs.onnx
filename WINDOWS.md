@@ -315,6 +315,52 @@ Remove-Item Env:DEMUCS_EP
 
 ---
 
+## 8. 六源模型（htdemucs_6s）
+
+不需要改任何代码：`src/` 全程按 `model.nb_sources`（从 ONNX 输出第 2 维读出）参数化，
+`src_cli/demucs.cpp` 的命名表里 4=guitar、5=piano 早就留好了。只差把模型导出来。
+
+```powershell
+# 导出（首次会下载权重 5c90dfd2-34c22ccb.th）
+.\.venv\Scripts\python.exe .\scripts\convert-pth-to-onnx.py .\onnx-models --six-source
+
+# 运行方式与 4 源完全相同
+$env:DEMUCS_EP='cuda'
+.\build\build-cli-win\demucs.exe .\onnx-models\htdemucs_6s.onnx .\work\in_44k.wav .\work\stems-6s
+Remove-Item Env:DEMUCS_EP
+
+# 渲染（render-stems.py 已支持 6 轨）
+.\.venv\Scripts\python.exe .\scripts\render-stems.py .\work\stems-6s "E:\Music\Output" "曲名 [6s]"
+```
+
+模型：`htdemucs_6s.onnx`，109 MB，opset 17，输出 `[1, 6, 4, 2048, 336]`。
+源顺序取自模型自身的 `sources` 属性：`drums, bass, other, vocals, guitar, piano`，
+与 C++ 的命名表一致。整首 238.6 s 的歌在 CUDA 上 **16.8 s**（4 源是 16.4 s，几乎同速）。
+
+**与 PyTorch 参考实现的一致性**（同一段 30 s、同一输入）：
+
+| stem | PyTorch RMS | CLI RMS | 相关性 |
+| --- | --- | --- | --- |
+| drums | 0.10749 | 0.10742 | 0.9978 |
+| bass | 0.12011 | 0.12020 | 0.9984 |
+| vocals | 0.16170 | 0.16135 | 0.9985 |
+| guitar | 0.08195 | 0.08395 | 0.9789 |
+| piano | 0.04271 | 0.04331 | 0.9548 |
+| other | 0.01358 | 0.00915–0.01084 | 0.75–0.95 |
+
+两点别误判成 bug：
+
+* `other` / `piano` 的波动来自**随机 shift**，不是管线问题。同一模型连跑三次比较自身：
+  `other` 的相关性只有 0.75–0.95、RMS 在 0.0092–0.0108 之间浮动；drums/bass/vocals 稳定在 0.997 以上。
+* 六轨相加与原混音相对误差 **13.6%**，而 PyTorch 参考实现同一片段是 **13.66%** ——
+  这个模型本身就不保能量（4 源约 8%）。
+
+上游对该模型的定性（`demucs-for-onnx/README.md`）：「experimental 6 sources model」、
+「okay quality for `guitar`, but a lot of bleeding and artifacts for the `piano` source」。
+实测吉他轨可用，钢琴轨确实会混入其它声部，属于模型本身的已知短板。
+
+---
+
 ## 相对上游的改动
 
 | 文件 | 改动 | 原因 |
