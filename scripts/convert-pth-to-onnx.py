@@ -86,7 +86,12 @@ if __name__ == '__main__':
             opset_version=17,
             do_constant_folding=True,
             input_names=['input'],
-            output_names=['output']
+            output_names=['output'],
+            # torch>=2.9 defaults to the dynamo exporter, which produces a
+            # different graph (and requires onnxscript). The C++ inference code
+            # in src/ expects the TorchScript exporter graph on opset 17, so
+            # pin the legacy exporter explicitly.
+            dynamo=False,
         )
         print(f"Model successfully converted to ONNX format at {onnx_file_path}")
     except Exception as e:
