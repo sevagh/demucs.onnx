@@ -5,6 +5,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <libnyquist/Common.h>
 #include <libnyquist/Decoders.h>
@@ -16,6 +17,10 @@
 #include <stddef.h>
 #include <tuple>
 #include <vector>
+
+#ifdef DEMUCS_HAS_DML
+#include <onnxruntime/core/providers/dml/dml_provider_factory.h>
+#endif
 
 using namespace nqr;
 
@@ -133,6 +138,38 @@ static void write_audio_file(const Eigen::MatrixXf &waveform,
     std::cout << "Encoder Status: " << encoderStatus << std::endl;
 }
 
+// Not every ONNX Runtime execution provider computes this graph correctly.
+// The DirectML provider, for instance, is ~17x faster than CPU on this model
+// but returns garbage (verified: output peaks ~1e4-1e5x the input, uncorrelated
+// with the CPU result), with no error raised by ORT. Writing those stems would
+// silently poison a music library, so the output gets a plausibility gate
+// before anything reaches disk.
+static bool outputs_are_plausible(const Eigen::Tensor3dXf &out,
+                                  const Eigen::MatrixXf &input)
+{
+    const float *data = out.data();
+    const size_t n = static_cast<size_t>(out.size());
+    float out_peak = 0.0f;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const float v = data[i];
+        if (!std::isfinite(v))
+        {
+            return false;
+        }
+        out_peak = std::max(out_peak, std::fabs(v));
+    }
+
+    float in_peak = 0.0f;
+    for (Eigen::Index i = 0; i < input.size(); ++i)
+    {
+        in_peak = std::max(in_peak, std::fabs(input.data()[i]));
+    }
+
+    // stems are at most a few times the mix in amplitude; 100x is already absurd
+    return out_peak <= std::max(1e-3f, in_peak) * 100.0f;
+}
+
 int main(int argc, const char **argv)
 {
     if (argc != 4)
@@ -198,6 +235,64 @@ int main(int argc, const char **argv)
     // General optimizations
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
+    // Execution provider selection. Upstream always runs on the CPU provider.
+    // Set DEMUCS_EP=cuda (or =dml) to run the network on the GPU; see WINDOWS.md
+    // for measured speed and the DirectML correctness warning.
+    const char *ep_env = std::getenv("DEMUCS_EP");
+    std::string ep = ep_env != nullptr ? ep_env : "cpu";
+    for (auto &c : ep) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    if (ep == "cuda" || ep == "gpu")
+    {
+#ifdef DEMUCS_HAS_CUDA
+        // OrtCUDAProviderOptions comes straight from onnxruntime_c_api.h, so no
+        // provider-specific header is needed. Throws if the CUDA provider DLL
+        // or the CUDA/cuDNN runtime is missing.
+        try
+        {
+            OrtCUDAProviderOptions cuda_options{};
+            cuda_options.device_id = 0;
+            session_options.AppendExecutionProvider_CUDA(cuda_options);
+            std::cout << "Execution provider: CUDA (device 0)" << std::endl;
+        }
+        catch (const Ort::Exception &e)
+        {
+            std::cerr << "[WARN] CUDA provider unavailable (" << e.what()
+                      << "); falling back to CPU. Check CUDA 12.x + cuDNN 9 DLLs "
+                         "are on PATH (see WINDOWS.md)."
+                      << std::endl;
+            std::cout << "Execution provider: CPU" << std::endl;
+        }
+#else
+        std::cerr << "[WARN] this build has no CUDA provider; using CPU. "
+                     "Rebuild with deps/ort-cuda staged (see WINDOWS.md)."
+                  << std::endl;
+        std::cout << "Execution provider: CPU" << std::endl;
+#endif
+    }
+    else if (ep == "dml" || ep == "directml")
+    {
+#ifdef DEMUCS_HAS_DML
+        Ort::ThrowOnError(
+            OrtSessionOptionsAppendExecutionProvider_DML(session_options, 0));
+        std::cout << "Execution provider: DirectML (device 0)" << std::endl;
+#else
+        std::cerr << "[WARN] this build has no DirectML provider; using CPU. "
+                     "Rebuild with deps/ort-dml staged (see WINDOWS.md)."
+                  << std::endl;
+        std::cout << "Execution provider: CPU" << std::endl;
+#endif
+    }
+    else
+    {
+        if (ep != "cpu")
+        {
+            std::cerr << "[WARN] unknown DEMUCS_EP='" << ep
+                      << "', expected 'cpu', 'cuda' or 'dml'; using CPU." << std::endl;
+        }
+        std::cout << "Execution provider: CPU" << std::endl;
+    }
+
     struct demucsonnx::demucs_model model = load_model(
         model_file,
         session_options
@@ -206,6 +301,19 @@ int main(int argc, const char **argv)
     // create 4 audio matrix same size, to hold output
     Eigen::Tensor3dXf audio_targets =
         demucsonnx::demucs_inference(model, audio, progressCallback);
+
+    if (!outputs_are_plausible(audio_targets, audio))
+    {
+        std::cerr << "\n[ERROR] separation output looks broken (non-finite or "
+                     "wildly out of range). Nothing was written to "
+                  << out_dir << "." << std::endl;
+        std::cerr << "        This normally means the selected execution "
+                     "provider mis-computes the model. DirectML is known to do "
+                     "this on htdemucs.onnx - see WINDOWS.md." << std::endl;
+        std::cerr << "        Retry with DEMUCS_EP=cpu (unset it) to use the "
+                     "CPU provider." << std::endl;
+        return 3;
+    }
 
     out_targets = audio_targets;
 
@@ -273,8 +381,16 @@ int main(int argc, const char **argv)
             }
         }
 
-        write_audio_file(target_waveform, p_target);
+        write_audio_file(target_waveform, p_target.string());
     }
 
-    return 0;
+    // Leave without running static destructors. With a GPU execution provider,
+    // ONNX Runtime's teardown of its CUDA provider / arena during process exit
+    // faults with an access violation (0xC0000005) *after* every stem has been
+    // written - the CPU provider exits cleanly. All output is flushed here, so
+    // skipping the destructor chain costs nothing and keeps exit code 0.
+    // Drop this if you need profiler/allocator teardown in a library build.
+    std::cout.flush();
+    std::cerr.flush();
+    std::_Exit(0);
 }
