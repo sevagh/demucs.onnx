@@ -160,6 +160,18 @@ CUDA 与 CPU 输出的 stem 差异（RMS 6.2–8.2%、相关性 0.994–0.998）
 输出必须全为有限值、峰值不超过输入峰值的 100 倍。不通过则打印原因、**一个文件都不写**、
 退出码 `3`。CPU/CUDA 都能正常通过。
 
+要事先验证某个 provider 能不能信，用仓库里的对比脚本（需要一个装了
+`onnxruntime-gpu` 或 `onnxruntime-directml` 的 Python 环境）：
+
+```powershell
+python .\scripts\bench-ep.py .\onnx-models\htdemucs.onnx cpu cuda
+# cpu   providers=['CPUExecutionProvider']       min 2417 ms/segment (~82 s / 238 s song)
+# cuda  providers=['CUDAExecutionProvider', ...] min  268 ms/segment (~ 9 s / 238 s song)
+#   out0 absmean 0.1622 vs 0.1622  rel 0.099%  corr 1.000000  ok
+```
+
+它同时给出单段耗时和两种 provider 的输出相关性；相关系数低于 0.999 会标 `MISMATCH`。
+
 ### 5.6 CUDA 运行时依赖（本机已验证）
 
 ORT 的 CUDA EP 在 Windows 上是延迟加载的：`onnxruntime_providers_cuda.dll` 会依赖这些 DLL，
