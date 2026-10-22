@@ -19,8 +19,25 @@
 #include "demucs.hpp"
 
 namespace demucsonnx {
-    Ort::AllocatorWithDefaultOptions allocator;
-    Ort::RunOptions run_options;
+    // These two are intentionally leaked (never destroyed). They are used until
+    // process exit, and letting them be destroyed as static objects runs their
+    // ReleaseRunOptions/allocator teardown *after* ONNX Runtime's GPU provider
+    // has already been torn down, which crashes with an access violation at
+    // exit (CPU provider exits cleanly). A few dozen bytes of deliberate leak
+    // is cheaper than a fault, and it matches how ORT itself treats the Env.
+    static Ort::AllocatorWithDefaultOptions &make_allocator()
+    {
+        static Ort::AllocatorWithDefaultOptions *instance = new Ort::AllocatorWithDefaultOptions();
+        return *instance;
+    }
+    static Ort::RunOptions &make_run_options()
+    {
+        static Ort::RunOptions *instance = new Ort::RunOptions();
+        return *instance;
+    }
+
+    Ort::AllocatorWithDefaultOptions &allocator = make_allocator();
+    Ort::RunOptions &run_options = make_run_options();
 }
 
 // Core function to create and load model from in-memory data (byte array)

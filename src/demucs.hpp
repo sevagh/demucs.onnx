@@ -13,8 +13,11 @@
 
 namespace demucsonnx
 {
-extern Ort::AllocatorWithDefaultOptions allocator;
-extern Ort::RunOptions run_options;
+// References to deliberately leaked singletons (see model_inference.cpp): they
+// must not be torn down as static objects, or the process faults at exit when a
+// GPU provider is in use.
+extern Ort::AllocatorWithDefaultOptions &allocator;
+extern Ort::RunOptions &run_options;
 
 // Define a type for your callback function
 using ProgressCallback = std::function<void(float, const std::string &)>;
@@ -23,9 +26,13 @@ const int FREQ_BRANCH_LEN = 336;
 const int TIME_BRANCH_LEN_IN = 343980;
 
 struct demucs_model {
+    // IMPORTANT: `env` must be declared before `sess`. Members are destroyed in
+    // reverse declaration order, so this keeps the Env alive until after the
+    // Session is gone. With the original order the Session outlived its Env and
+    // GPU providers crashed on teardown (0xC0000005 access violation at exit).
+    Ort::Env env{ORT_LOGGING_LEVEL_ERROR, "demucs_onnx"}; // Persistent environment
     std::unique_ptr<Ort::Session> sess;        // Smart pointer to allow "empty" state
     int nb_sources = 0;
-    Ort::Env env{ORT_LOGGING_LEVEL_ERROR, "demucs_onnx"}; // Persistent environment
     std::vector<std::string> input_names;      // Persistent input names
     std::vector<std::string> output_names;     // Persistent output names
 
